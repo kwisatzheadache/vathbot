@@ -1,8 +1,7 @@
 defmodule VathbotTest do
   use ExUnit.Case
-  doctest Vathbot
 
-  test "greets the world" do
-    assert Vathbot.hello() == :world
+  test "application module loads" do
+    assert Code.ensure_loaded?(Vathbot.Application)
   end
 end

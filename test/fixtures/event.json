@@ -1,0 +1,15 @@
+{
+  "slug": "btc-updown-5m-1779225300",
+  "markets": [
+    {
+      "id": "2296343",
+      "conditionId": "0x56e1a62afca95c431d93e59d8d4ee487a5e980cc63a272745a098de895d1094f",
+      "eventStartTime": "2026-05-19T21:15:00Z",
+      "endDate": "2026-05-19T21:20:00Z",
+      "outcomes": "[\"Up\", \"Down\"]",
+      "clobTokenIds": "[\"100535788273037192096679297787678443651387221019721763293954558367106318543737\", \"41387220538561275025131545804502245232730126565556128904196143457449813744094\"]",
+      "question": "Bitcoin Up or Down - May 19, 5:15PM-5:20PM ET",
+      "resolutionSource": "https://data.chain.link/streams/btc-usd"
+    }
+  ]
+}

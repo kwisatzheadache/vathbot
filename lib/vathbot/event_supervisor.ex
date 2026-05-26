@@ -23,9 +23,17 @@ defmodule Vathbot.EventSupervisor do
   Starts a MarketRecorder for the given event under this supervisor.
   """
   def start_recorder(%Vathbot.MarketDiscovery.BTCUpDownEvent{} = event) do
+    model_runner =
+      case Vathbot.ModelRunner.start_link(event) do
+        {:ok, pid} -> pid
+        :ignore -> nil
+      end
+
+    recorder_args = [event, [model_runner: model_runner]]
+
     spec = %{
       id: event.slug,
-      start: {Vathbot.MarketRecorder, :start_link, [event]},
+      start: {Vathbot.MarketRecorder, :start_link, recorder_args},
       restart: :temporary
     }
 

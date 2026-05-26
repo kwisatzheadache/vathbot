@@ -26,14 +26,16 @@ defmodule Vathbot.MarketRecorder do
     :end_time,
     :ping_timer,
     :timeout_timer,
+    :model_runner,
     message_count: 0,
     resolved: false
   ]
 
-  def start_link(%Vathbot.MarketDiscovery.BTCUpDownEvent{} = event) do
+  def start_link(%Vathbot.MarketDiscovery.BTCUpDownEvent{} = event, opts \\ []) do
     Logger.info("MarketRecorder starting for #{event.slug}")
 
     Vathbot.DataWriter.write_event_metadata(event.slug, event.interval, event.raw)
+    Vathbot.MarketFinalizer.write_metadata(event)
 
     state = %__MODULE__{
       slug: event.slug,
@@ -42,7 +44,8 @@ defmodule Vathbot.MarketRecorder do
       condition_id: event.condition_id,
       jsonl_path: Vathbot.DataWriter.market_jsonl_path(event.slug, event.interval),
       start_time: event.start_time,
-      end_time: event.end_time
+      end_time: event.end_time,
+      model_runner: Keyword.get(opts, :model_runner)
     }
 
     WebSockex.start_link(@market_ws_url, __MODULE__, state, handle_initial_conn_failure: true)
@@ -106,6 +109,12 @@ defmodule Vathbot.MarketRecorder do
 
   def handle_frame(_frame, state), do: {:ok, state}
 
+  @impl WebSockex
+  def terminate(_reason, state) do
+    Vathbot.MarketFinalizer.finalize_market(state.slug, state.interval)
+    :ok
+  end
+
   @impl true
   def handle_disconnect(%{reason: _reason}, %{resolved: true} = state) do
     Logger.info("MarketRecorder #{state.slug}: cleanly disconnected after resolution")
@@ -122,6 +131,7 @@ defmodule Vathbot.MarketRecorder do
     ts = System.system_time(:millisecond)
     record = %{"event_type" => "book_snapshot", "books" => data_list, "recorded_at" => ts}
     Vathbot.DataWriter.append_jsonl(state.jsonl_path, record)
+    forward_to_model_runner(state.model_runner, record)
 
     new_count = state.message_count + 1
     if rem(new_count, 50) == 0 do
@@ -135,6 +145,7 @@ defmodule Vathbot.MarketRecorder do
     event_type = data["event_type"]
     record = Map.put(data, "recorded_at", System.system_time(:millisecond))
     Vathbot.DataWriter.append_jsonl(state.jsonl_path, record)
+    forward_to_model_runner(state.model_runner, record)
 
     new_count = state.message_count + 1
     if rem(new_count, 50) == 0 do
@@ -153,5 +164,11 @@ defmodule Vathbot.MarketRecorder do
     # Add 5 minutes buffer after the expected end time
     diff = DateTime.diff(end_time, DateTime.utc_now(), :millisecond) + 5 * 60 * 1_000
     max(diff, 60_000)
+  end
+
+  defp forward_to_model_runner(nil, _record), do: :ok
+
+  defp forward_to_model_runner(pid, record) when is_pid(pid) do
+    GenServer.cast(pid, {:stream_message, record})
   end
 end

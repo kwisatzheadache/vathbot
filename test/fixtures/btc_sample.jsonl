@@ -1,0 +1,3 @@
+{"connection_id":"x","payload":{"symbol":"btc/usd","timestamp":1779148799000,"value":76945.65},"recorded_at":1779148800022,"topic":"crypto_prices_chainlink","type":"update"}
+{"connection_id":"x","payload":{"symbol":"btc/usd","timestamp":1779148799000,"value":76946.0},"recorded_at":1779148801000,"topic":"crypto_prices_chainlink","type":"update"}
+{"connection_id":"x","payload":{"data":[{"timestamp":1779148800000,"value":50000.0}],"symbol":"btcusdt"},"recorded_at":1779148802000,"topic":"crypto_prices","type":"subscribe"}

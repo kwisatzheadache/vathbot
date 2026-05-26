@@ -21,7 +21,8 @@ defmodule Vathbot.MixProject do
   defp deps do
     [
       {:websockex, "~> 0.4"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:explorer, "~> 0.10"}
     ]
   end
 end
