@@ -4,6 +4,9 @@ config :vathbot, :data_root, "data"
 config :vathbot, :start_runtime, true
 config :vathbot, :execute_trades, System.get_env("VATHBOT_EXECUTE_TRADES") == "1"
 
+# Polymarket crypto Up/Down tickers (slug prefix: `{asset}-updown-{5m|15m}-{epoch}`)
+config :vathbot, :updown_assets, ~w(btc eth sol xrp doge bnb hype)
+
 pybuy_dir = Path.expand("../pybuy", __DIR__)
 venv_python = Path.join(pybuy_dir, "venv/bin/python")
 

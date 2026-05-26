@@ -1,6 +1,6 @@
 defmodule Vathbot.Scheduler do
   @moduledoc """
-  Periodically discovers upcoming BTC Up/Down markets and spawns
+  Periodically discovers upcoming crypto Up/Down markets and spawns
   MarketRecorder processes for events starting within the next ~70 minutes.
 
   Runs a discovery cycle every 60 seconds and tracks which events
