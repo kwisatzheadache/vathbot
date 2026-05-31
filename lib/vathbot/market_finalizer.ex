@@ -1,18 +1,42 @@
 defmodule Vathbot.MarketFinalizer do
   @moduledoc """
-  Async market close jobs: JSONL → ticks.parquet (via Task.Supervisor).
+  Async market close jobs: JSONL → ticks.parquet via a queued coordinator.
   """
 
   require Logger
 
+  alias Vathbot.MarketFinalizer.Coordinator
+
   @task_supervisor Vathbot.MarketFinalizer.TaskSupervisor
 
+  def child_specs(opts \\ []) do
+    max_concurrent = Keyword.get(opts, :max_concurrent, 2)
+
+    [
+      %{
+        id: @task_supervisor,
+        start: {Task.Supervisor, :start_link, [[name: @task_supervisor]]},
+        type: :supervisor
+      },
+      {Coordinator, max_concurrent: max_concurrent}
+    ]
+  end
+
+  @doc false
   def child_spec(opts) do
     %{
-      id: @task_supervisor,
-      start: {Task.Supervisor, :start_link, [[name: @task_supervisor, max_children: 1] ++ opts]},
-      type: :supervisor
+      id: __MODULE__,
+      type: :supervisor,
+      start: {__MODULE__, :start_link, [opts]}
     }
+  end
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
+  end
+
+  def init(opts) do
+    Supervisor.init(child_specs(opts), strategy: :one_for_one)
   end
 
   @doc "Writes metadata.parquet from an event at recorder start."
@@ -28,36 +52,36 @@ defmodule Vathbot.MarketFinalizer do
     end
   end
 
-  @doc "Schedules JSONL normalization and ticks.parquet write (non-blocking)."
+  @doc "Enqueues JSONL normalization and ticks.parquet write (non-blocking)."
   def finalize_market(slug, interval) do
-    case Task.Supervisor.start_child(@task_supervisor, fn ->
-           do_finalize(slug, interval)
-         end) do
-      {:ok, _pid} ->
-        :ok
-
-      {:error, :max_children} ->
-        Logger.warning("MarketFinalizer: queue full, retry later for #{slug}")
-        {:error, :max_children}
-
-      {:error, reason} ->
-        Logger.error("MarketFinalizer: could not start task for #{slug}: #{inspect(reason)}")
-        {:error, reason}
-    end
+    Coordinator.enqueue(slug, interval)
+    :ok
   end
 
   @doc "Runs finalize synchronously (for backfill / scripts)."
   def finalize_market_sync(slug, interval), do: do_finalize(slug, interval)
 
+  @doc false
+  def run_finalize(slug, interval), do: do_finalize(slug, interval)
+
   defp do_finalize(slug, interval) do
+    if already_finalized?(slug, interval) do
+      Logger.debug("MarketFinalizer #{slug}: already finalized, skipping")
+      {:ok, :already_done}
+    else
+      do_finalize_work(slug, interval)
+    end
+  end
+
+  defp do_finalize_work(slug, interval) do
     t0 = System.monotonic_time(:millisecond)
     jsonl_path = Vathbot.DataWriter.market_jsonl_path(slug, interval)
-
     ticks_path = Vathbot.DataWriter.ticks_parquet_path(slug, interval)
 
     with {:ok, meta} <- metadata_for_slug(slug, interval),
          :ok <- write_metadata_parquet(slug, interval, meta),
-         {:ok, count} <- Vathbot.MarketNormalize.write_ticks_parquet_from_jsonl(jsonl_path, ticks_path, meta),
+         {:ok, count} <-
+           Vathbot.MarketNormalize.write_ticks_parquet_from_jsonl(jsonl_path, ticks_path, meta),
          :ok <- Vathbot.DataWriter.remove_market_jsonl(slug, interval) do
       elapsed = System.monotonic_time(:millisecond) - t0
       Logger.info("MarketFinalizer #{slug}: #{count} ticks → parquet (#{elapsed}ms)")
@@ -71,6 +95,13 @@ defmodule Vathbot.MarketFinalizer do
         Logger.error("MarketFinalizer #{slug}: failed #{inspect(reason)}")
         err
     end
+  end
+
+  defp already_finalized?(slug, interval) do
+    jsonl = Vathbot.DataWriter.full_path(Vathbot.DataWriter.market_jsonl_path(slug, interval))
+    parquet = Vathbot.DataWriter.full_path(Vathbot.DataWriter.ticks_parquet_path(slug, interval))
+
+    not File.exists?(jsonl) and File.exists?(parquet)
   end
 
   defp write_metadata_parquet(slug, interval, meta) do
@@ -98,6 +129,7 @@ defmodule Vathbot.MarketFinalizer do
     {:ok,
      %Vathbot.MarketDiscovery.BTCUpDownEvent{
        slug: slug,
+       asset: Vathbot.MarketDiscovery.asset_from_slug(slug),
        interval: interval,
        clob_token_ids: decode_json_field(market["clobTokenIds"]),
        outcomes: decode_json_field(market["outcomes"]),

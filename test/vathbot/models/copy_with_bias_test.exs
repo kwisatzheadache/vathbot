@@ -237,6 +237,15 @@ defmodule Vathbot.Models.CopyWithBiasTest do
       refute CopyWithBias.live_trading_enabled?(model, at_01)
       assert CopyWithBias.live_trading_enabled?(model_15m, at_01)
     end
+
+    test "disabled for non-live-trading assets even in time window", %{model: _model} do
+      event_eth = %{sample_event() | slug: "eth-updown-5m-1779225300"}
+      model_eth = new_model!(event_eth)
+      in_window = ~U[2026-05-25 04:30:00Z]
+
+      refute CopyWithBias.live_trading_enabled?(model_eth, in_window)
+      assert CopyWithBias.live_trading_skip_reason(model_eth, in_window) =~ "eth"
+    end
   end
 
   defp new_model!(event) do

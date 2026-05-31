@@ -15,6 +15,7 @@ defmodule Vathbot.Models.CopyWithBias do
   messages (initial connect payload).
   """
 
+  alias Vathbot.MarketDiscovery
   alias Vathbot.MarketDiscovery.BTCUpDownEvent
   alias Vathbot.MarketNormalize
   alias Vathbot.Types.Signal
@@ -26,7 +27,7 @@ defmodule Vathbot.Models.CopyWithBias do
   # UTC hour ranges: inclusive start, exclusive end (same convention as 02:00–06:00).
   @live_trading_windows %{
     5 => {2, 6},
-    15 => {23, 4}
+    15 => {0, 5}
   }
 
   defstruct [:meta, signal_emitted: false, start_triggered: false, latest_books: %{}]
@@ -87,32 +88,59 @@ defmodule Vathbot.Models.CopyWithBias do
   @doc """
   Returns whether live order placement is allowed for this model at `utc_now`.
 
+  Requires the event asset to be in `:live_trading_assets` (default: BTC only).
+
   * 5m events: 02:00–06:00 UTC
   * 15m events: 00:00–05:00 UTC
   """
-  def live_trading_enabled?(%__MODULE__{meta: %{interval_minutes: minutes}}, utc_now \\ DateTime.utc_now()) do
+  def live_trading_enabled?(%__MODULE__{meta: meta}, utc_now \\ DateTime.utc_now()) do
+    asset = MarketDiscovery.asset_from_slug(meta.slug)
+    assets = Application.get_env(:vathbot, :live_trading_assets, ~w(btc))
+
+    asset in assets and live_trading_window_open?(meta.interval_minutes, utc_now)
+  end
+
+  @doc """
+  Human-readable reason live trading was skipped (for logging).
+  """
+  def live_trading_skip_reason(%__MODULE__{meta: meta}, utc_now \\ DateTime.utc_now()) do
+    asset = MarketDiscovery.asset_from_slug(meta.slug)
+    assets = Application.get_env(:vathbot, :live_trading_assets, ~w(btc))
+
+    cond do
+      asset not in assets ->
+        "live trading disabled for #{asset} (only #{inspect(assets)} enabled)"
+
+      not live_trading_window_open?(meta.interval_minutes, utc_now) ->
+        case Map.fetch(@live_trading_windows, meta.interval_minutes) do
+          {:ok, {start_hour, end_hour}} ->
+            "live trading disabled outside #{format_hour_range(start_hour, end_hour)} UTC"
+
+          :error ->
+            "live trading disabled for #{meta.interval_minutes}m events"
+        end
+
+      true ->
+        "live trading disabled"
+    end
+  end
+
+  defp live_trading_window_open?(minutes, utc_now) do
     case Map.fetch(@live_trading_windows, minutes) do
       {:ok, {start_hour, end_hour}} -> in_live_trading_window?(utc_now, start_hour, end_hour)
       :error -> false
     end
   end
 
-  @doc """
-  Human-readable reason live trading was skipped (for logging).
-  """
-  def live_trading_skip_reason(%__MODULE__{meta: %{interval_minutes: minutes}}, _utc_now \\ DateTime.utc_now()) do
-    case Map.fetch(@live_trading_windows, minutes) do
-      {:ok, {start_hour, end_hour}} ->
-        "live trading disabled outside #{format_hour_range(start_hour, end_hour)} UTC"
-
-      :error ->
-        "live trading disabled for #{minutes}m events"
-    end
-  end
-
   defp in_live_trading_window?(utc_now, start_hour, end_hour) do
     utc = ensure_utc(utc_now)
-    utc.hour >= start_hour and utc.hour < end_hour
+    hour = utc.hour
+
+    if start_hour <= end_hour do
+      hour >= start_hour and hour < end_hour
+    else
+      hour >= start_hour or hour < end_hour
+    end
   end
 
   defp format_hour_range(start_hour, end_hour) do

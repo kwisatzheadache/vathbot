@@ -8,7 +8,7 @@ defmodule Vathbot.Application do
     core_children = [
       Vathbot.Secrets,
       Vathbot.EventSupervisor,
-      Vathbot.MarketFinalizer.child_spec([])
+      Vathbot.MarketFinalizer.child_spec(max_concurrent: 2)
     ]
 
     opts = [strategy: :one_for_one, name: Vathbot.Supervisor]
@@ -44,7 +44,7 @@ defmodule Vathbot.Application do
     [
       Vathbot.OrderHandler,
       Vathbot.BtcParquetCompactor,
-      Vathbot.BtcPriceRecorder,
+      Vathbot.CryptoPriceRecorder,
       Vathbot.Scheduler
     ]
   end

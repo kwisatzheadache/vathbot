@@ -1,7 +1,7 @@
 defmodule Vathbot.Scheduler do
   @moduledoc """
   Periodically discovers upcoming crypto Up/Down markets and spawns
-  MarketRecorder processes for events starting within the next ~70 minutes.
+  MarketRecorder processes for events within the configured discovery window.
 
   Runs a discovery cycle every 60 seconds and tracks which events
   already have active recorders to avoid duplicates.
@@ -12,7 +12,6 @@ defmodule Vathbot.Scheduler do
   require Logger
 
   @check_interval_ms 60_000
-  @window_minutes 70
 
   defstruct active_slugs: MapSet.new()
 
@@ -38,9 +37,10 @@ defmodule Vathbot.Scheduler do
 
   @doc false
   def run_discovery(state) do
-    Logger.info("Scheduler: discovering upcoming events (window: #{@window_minutes}min)...")
+    window = Vathbot.MarketDiscovery.discovery_window_minutes()
+    Logger.info("Scheduler: discovering upcoming events (window: #{window}min)...")
 
-    events = Vathbot.MarketDiscovery.discover_upcoming(@window_minutes)
+    events = Vathbot.MarketDiscovery.discover_upcoming(window)
 
     Logger.info("Scheduler: found #{length(events)} upcoming events")
 

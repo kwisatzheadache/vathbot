@@ -19,7 +19,7 @@ defmodule Vathbot.BtcNormalize do
   def sources, do: @sources
 
   @doc """
-  Reads a day's JSONL and returns deduplicated rows (latest received_ts per event_ts+source).
+  Reads a day's JSONL and returns deduplicated rows (latest received_ts per event_ts+source+symbol).
   """
   def ticks_from_jsonl(source, date) do
     path = Vathbot.DataWriter.btc_price_path(source, date)
@@ -139,7 +139,7 @@ defmodule Vathbot.BtcNormalize do
 
   defp dedupe_rows(rows) do
     rows
-    |> Enum.group_by(fn r -> {r.event_ts, r.source} end)
+    |> Enum.group_by(fn r -> {r.event_ts, r.source, r.symbol} end)
     |> Enum.map(fn {_key, group} ->
       Enum.max_by(group, &received_sort_key/1, fn a, b -> a >= b end)
     end)

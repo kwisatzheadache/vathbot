@@ -31,4 +31,13 @@ defmodule Vathbot.MarketDiscoveryTest do
                [1_779_837_300, 1_779_837_600]
     end
   end
+
+  describe "discovery_window_minutes/0" do
+    test "reads from application env" do
+      prev = Application.get_env(:vathbot, :discovery_window_minutes)
+      Application.put_env(:vathbot, :discovery_window_minutes, 7)
+      assert MarketDiscovery.discovery_window_minutes() == 7
+      Application.put_env(:vathbot, :discovery_window_minutes, prev)
+    end
+  end
 end

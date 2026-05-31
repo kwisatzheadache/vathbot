@@ -1,6 +1,6 @@
 defmodule Vathbot.TradeMarkets do
   @moduledoc """
-  Helpers for selecting tradeable BTC Up/Down events (used by integration tests).
+  Helpers for selecting tradeable Up/Down events (used by integration tests).
   """
 
   alias Vathbot.MarketDiscovery
@@ -13,7 +13,7 @@ defmodule Vathbot.TradeMarkets do
   def discover_pre_start_event(min_lead_seconds \\ 120) do
     cutoff = DateTime.add(DateTime.utc_now(), min_lead_seconds, :second)
 
-    MarketDiscovery.discover_upcoming(70)
+    MarketDiscovery.discover_upcoming(MarketDiscovery.discovery_window_minutes())
     |> Enum.find_value(fn event ->
       with true <- event_active?(event),
            true <- market_listed?(event.slug),

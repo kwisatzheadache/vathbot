@@ -52,12 +52,20 @@ defmodule Vathbot.MarketDiscovery do
   end
 
   @doc """
-  Returns upcoming events within a time window (default: next 70 minutes).
+  Configured discovery window in minutes (default 5).
+  """
+  def discovery_window_minutes do
+    Application.get_env(:vathbot, :discovery_window_minutes, 5)
+  end
+
+  @doc """
+  Returns upcoming events within a time window (default: `:discovery_window_minutes`).
 
   Fetches event details from the Gamma API for each computed slug.
   Returns only events that exist and are active/open.
   """
-  def discover_upcoming(window_minutes \\ 70, from \\ nil) do
+  def discover_upcoming(window_minutes \\ nil, from \\ nil) do
+    window_minutes = window_minutes || discovery_window_minutes()
     now = from || DateTime.utc_now()
     epoch = DateTime.to_unix(now)
     window_end = epoch + window_minutes * 60

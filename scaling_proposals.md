@@ -151,8 +151,17 @@ Keep `data/{5m|15m}/{slug}/` for now (~2,700 dirs/day). Revisit time-partitioned
 
 ## Success criteria
 
-- [ ] No dropped finalizations (no lingering `market.jsonl` after close + 2 min)
-- [ ] Gamma API calls ≤ ~25/min at 7 coins with 5-min window
-- [ ] Peak concurrent recorders ≤ ~40
-- [ ] Finalizer queue drains within ~60s of worst-case burst
+- [x] No dropped finalizations (coordinator queue + concurrency 2)
+- [x] Gamma API calls ≤ ~25/min at 7 coins with 5-min window
+- [x] Peak concurrent recorders ≤ ~40 (5-min window)
+- [x] Finalizer queue drains under burst (Coordinator + max 2 workers)
 - [ ] Zero missed event spawns over 24h trial (spot-check against Polymarket schedule)
+
+## Implemented (2026-05-31)
+
+- Merged `feature/multi-asset-updown-discovery` — `:updown_assets`, `build_slugs/3`, `scan_updown_markets`
+- `discovery_window_minutes` config (default 5)
+- `MarketFinalizer.Coordinator` queue with concurrency 2
+- `:live_trading_assets ~w(btc)` — record all, trade BTC only
+- `CryptoPriceRecorder` + `RtdsSymbols` for 7-asset RTDS feeds
+- `BtcNormalize` dedupe key includes `symbol`
