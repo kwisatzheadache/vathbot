@@ -9,9 +9,13 @@ cd pybuy
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-# Edit .env with your credentials
+cp .env.example secrets.env
+# Edit secrets.env with your credentials (use a dedicated bot wallet)
+python manage_secrets.py encrypt secrets.env secrets.env.enc
+rm -f secrets.env .env
 ```
+
+The encrypted file `secrets.env.enc` is local-only (chmod 600, gitignored). Plaintext `.env` is no longer read at runtime.
 
 ### Required environment variables
 
@@ -20,6 +24,8 @@ cp .env.example .env
 | `POLYMARKET_PRIVATE_KEY` | Wallet private key |
 | `POLYMARKET_FUNDER` | Proxy/funder address |
 | `POLYMARKET_SIGNATURE_TYPE` | Signature type (`1` for proxy wallet) |
+
+When invoked from vathbot with live trading enabled, these are passed via subprocess environment after password unlock. For standalone CLI use, provide `--secrets-file` or set the variables in your shell.
 
 ## Buy signal
 
@@ -46,7 +52,7 @@ Both modes use **limit orders** at the price you specify.
 ### Buy (CLI flags)
 
 ```bash
-python place_order.py buy \
+python place_order.py --secrets-file secrets.env.enc buy \
   --slug btc-updown-5m-1710000000 \
   --outcome Up \
   --amount 1.00 \
@@ -56,19 +62,21 @@ python place_order.py buy \
 ### Buy (JSON signal)
 
 ```bash
-python place_order.py buy --signal '{"slug":"btc-updown-5m-1710000000","outcome":"Up","amount":1.0,"price":0.50}'
+python place_order.py --secrets-file secrets.env.enc \
+  buy --signal '{"slug":"btc-updown-5m-1710000000","outcome":"Up","amount":1.0,"price":0.50}'
 ```
 
 ### Buy with fill-and-kill
 
 ```bash
-python place_order.py buy --slug my-market-slug --outcome Yes --amount 5.0 --price 0.42 --fak
+python place_order.py --secrets-file secrets.env.enc \
+  buy --slug my-market-slug --outcome Yes --amount 5.0 --price 0.42 --fak
 ```
 
 ### Sell (limit)
 
 ```bash
-python place_order.py sell \
+python place_order.py --secrets-file secrets.env.enc sell \
   --slug btc-updown-5m-1710000000 \
   --outcome Up \
   --shares 2.0 \
@@ -78,13 +86,15 @@ python place_order.py sell \
 ### Sell (market — hits best bid)
 
 ```bash
-python place_order.py sell \
+python place_order.py --secrets-file secrets.env.enc sell \
   --slug btc-updown-5m-1710000000 \
   --outcome Up \
   --shares 2.0
 ```
 
 ### Dry run
+
+Dry run does not require credentials or a password:
 
 ```bash
 python place_order.py buy --slug my-slug --outcome Up --amount 1.0 --price 0.50 --dry-run
@@ -94,11 +104,28 @@ python place_order.py buy --slug my-slug --outcome Up --amount 1.0 --price 0.50 
 
 | Flag | Description |
 |------|-------------|
-| `--env-file PATH` | Credentials file (default: `pybuy/.env`) |
+| `--secrets-file PATH` | Password-encrypted credentials file |
+| `--env-file PATH` | Plaintext credentials (requires `--allow-plaintext`) |
+| `--allow-plaintext` | Allow unsafe plaintext env file loading |
 | `--log-file PATH` | JSONL response log (default: `pybuy/orders.jsonl`) |
 | `--fak` | Use fill-and-kill instead of fill-or-kill |
 | `--dry-run` | Plan the order without posting |
 | `-v` | Verbose / debug logging |
+
+## Secrets management
+
+```bash
+python manage_secrets.py encrypt secrets.env secrets.env.enc
+python manage_secrets.py decrypt secrets.env.enc   # prints to stdout
+python manage_secrets.py verify secrets.env.enc    # checks password only
+```
+
+## Trade history
+
+```bash
+python trade_history.py --secrets-file secrets.env.enc
+python trade_history.py --all --secrets-file secrets.env.enc --csv
+```
 
 ## Response log
 
@@ -123,10 +150,13 @@ Exit code is `0` on success, `1` on failure.
 ## Programmatic use
 
 ```python
-from place_order import BuySignal, buy, sell, load_credentials
-from pathlib import Path
+import os
+from place_order import BuySignal, buy, sell, ensure_credentials
 
-load_credentials(Path(".env"))
+os.environ["POLYMARKET_PRIVATE_KEY"] = "..."
+os.environ["POLYMARKET_FUNDER"] = "..."
+os.environ["POLYMARKET_SIGNATURE_TYPE"] = "2"
+ensure_credentials()
 
 signal = BuySignal(slug="my-slug", outcome="Up", amount=1.0, price=0.50)
 record = buy(signal)  # FOK limit buy

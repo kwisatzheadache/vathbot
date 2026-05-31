@@ -65,24 +65,47 @@ defmodule Vathbot.MarketNormalize do
   end
 
   @doc """
-  Reads market JSONL and returns normalized tick rows sorted by event_ts, outcome.
+  Lazy stream of normalized ticks from a market JSONL file (one line at a time).
   """
-  def ticks_from_jsonl(jsonl_relative_path, %{} = meta) do
+  def jsonl_tick_stream(jsonl_relative_path, %{} = meta) do
     full_path = Vathbot.DataWriter.full_path(jsonl_relative_path)
 
     if File.exists?(full_path) do
-      rows =
+      stream =
         full_path
         |> File.stream!([], :line)
         |> Stream.map(&String.trim/1)
         |> Stream.reject(&(&1 == ""))
         |> Stream.flat_map(&lines_to_ticks(&1, meta))
+
+      {:ok, stream}
+    else
+      {:error, :enoent}
+    end
+  end
+
+  @doc """
+  Streams JSONL → sorted ticks.parquet without loading the full file into memory.
+  """
+  def write_ticks_parquet_from_jsonl(jsonl_relative_path, parquet_relative_path, %{} = meta, opts \\ []) do
+    with {:ok, stream} <- jsonl_tick_stream(jsonl_relative_path, meta) do
+      Vathbot.ParquetWriter.write_ticks_stream(parquet_relative_path, stream, opts)
+    end
+  end
+
+  @doc """
+  Reads market JSONL and returns normalized tick rows sorted by event_ts, outcome.
+
+  Prefer `write_ticks_parquet_from_jsonl/4` for large files.
+  """
+  def ticks_from_jsonl(jsonl_relative_path, %{} = meta) do
+    with {:ok, stream} <- jsonl_tick_stream(jsonl_relative_path, meta) do
+      rows =
+        stream
         |> Enum.to_list()
         |> Enum.sort_by(fn t -> {DateTime.to_unix(t.event_ts, :microsecond), t.outcome} end)
 
       {:ok, rows}
-    else
-      {:error, :enoent}
     end
   end
 

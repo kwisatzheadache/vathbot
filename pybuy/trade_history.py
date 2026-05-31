@@ -4,26 +4,24 @@ Fetch full trade + settlement history from the Polymarket data API and produce a
 By default, events before 2026-05-23 UTC are excluded (pre-vathbot wallet activity).
 
 Usage:
-    python trade_history.py              # since 2026-05-23 UTC
-    python trade_history.py --all        # full wallet history
-    python trade_history.py --csv        # also write trade_history.csv
+    python trade_history.py --secrets-file secrets.env.enc
+    python trade_history.py --all --secrets-file secrets.env.enc
+    python trade_history.py --csv
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import os
+import sys
 from collections import defaultdict
 from datetime import datetime, timezone
-
-import os
+from pathlib import Path
 
 import requests
 from py_clob_client_v2 import BalanceAllowanceParams, AssetType
 
-from place_order import DEFAULT_ENV_FILE, get_clob_client, load_credentials
-
-load_credentials(DEFAULT_ENV_FILE)
-FUNDER = os.environ["POLYMARKET_FUNDER"]
+from place_order import ensure_credentials, get_clob_client
 
 DATA_API = "https://data-api.polymarket.com"
 
@@ -37,14 +35,14 @@ def filter_events_since(events: list[dict], since: datetime) -> list[dict]:
     return [e for e in events if int(e.get("timestamp", 0)) >= since_ts]
 
 
-def fetch_activity() -> list[dict]:
+def fetch_activity(funder: str) -> list[dict]:
     print("Fetching activity from Polymarket data API...", flush=True)
     all_events: list[dict] = []
     offset = 0
     while True:
         r = requests.get(
             f"{DATA_API}/activity",
-            params={"user": FUNDER, "limit": 100, "offset": offset},
+            params={"user": funder, "limit": 100, "offset": offset},
             timeout=15,
         )
         r.raise_for_status()
@@ -62,9 +60,9 @@ def fetch_activity() -> list[dict]:
     return all_events
 
 
-def fetch_open_positions() -> dict[str, float]:
+def fetch_open_positions(funder: str) -> dict[str, float]:
     """Return {conditionId.lower(): current_value_usd}."""
-    r = requests.get(f"{DATA_API}/positions", params={"user": FUNDER}, timeout=15)
+    r = requests.get(f"{DATA_API}/positions", params={"user": funder}, timeout=15)
     r.raise_for_status()
     result: dict[str, float] = {}
     for p in r.json():
@@ -208,10 +206,39 @@ def main() -> None:
         action="store_true",
         help="Include full wallet history (default: since 2026-05-23 UTC)",
     )
+    parser.add_argument(
+        "--secrets-file",
+        type=Path,
+        default=None,
+        help="Password-encrypted credentials file (prompts for password)",
+    )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=None,
+        help="Plaintext .env file (requires --allow-plaintext)",
+    )
+    parser.add_argument(
+        "--allow-plaintext",
+        action="store_true",
+        help="Allow loading credentials from --env-file (unsafe)",
+    )
     args = parser.parse_args()
 
-    all_events = fetch_activity()
-    open_values = fetch_open_positions()
+    try:
+        ensure_credentials(
+            secrets_file=args.secrets_file,
+            env_file=args.env_file,
+            allow_plaintext=args.allow_plaintext,
+        )
+    except (FileNotFoundError, EnvironmentError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    funder = os.environ["POLYMARKET_FUNDER"]
+
+    all_events = fetch_activity(funder)
+    open_values = fetch_open_positions(funder)
     balance = fetch_usdc_balance()
 
     if args.all:

@@ -3,9 +3,18 @@
 # The directory Mix will write compiled artifacts to.
 /_build/
 
-.venv/bin
-*venv/bin
-venv
+# Python virtual environments
+.venv/
+.venv-*/
+venv/
+**/venv/
+**/.venv/
+**/.venv-*/
+ENV/
+env/
+
+# pip-audit and other tool caches
+.cache/
 
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
@@ -33,3 +42,8 @@ vathbot-*.tar
 
 # Recorded market data
 /data/
+
+# Polymarket credentials (never commit)
+pybuy/.env
+pybuy/secrets.env
+pybuy/secrets.env.enc

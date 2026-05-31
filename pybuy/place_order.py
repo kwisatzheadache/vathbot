@@ -42,7 +42,6 @@ BUY = SideString.BUY
 SELL = SideString.SELL
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_ENV_FILE = SCRIPT_DIR / ".env"
 DEFAULT_LOG_FILE = SCRIPT_DIR / "orders.jsonl"
 
 Outcome = Literal["Up", "Down", "Yes", "No"]
@@ -81,13 +80,83 @@ class OrderRecord:
 _clob_client: ClobClient | None = None
 
 
-def load_credentials(env_file: Path) -> None:
+REQUIRED_CREDENTIAL_KEYS = (
+    "POLYMARKET_PRIVATE_KEY",
+    "POLYMARKET_FUNDER",
+    "POLYMARKET_SIGNATURE_TYPE",
+)
+
+
+def credentials_present() -> bool:
+    return all(os.environ.get(key) for key in REQUIRED_CREDENTIAL_KEYS)
+
+
+def load_credentials_from_env_file(env_file: Path) -> None:
     if not env_file.is_file():
         raise FileNotFoundError(f"Env file not found: {env_file}")
     load_dotenv(env_file, override=True)
-    for key in ("POLYMARKET_PRIVATE_KEY", "POLYMARKET_FUNDER", "POLYMARKET_SIGNATURE_TYPE"):
+    _validate_required_credentials()
+
+
+def load_credentials_from_secrets_file(secrets_file: Path) -> None:
+    from getpass import getpass
+
+    from manage_secrets import decrypt_file, parse_env
+
+    if not secrets_file.is_file():
+        raise FileNotFoundError(f"Secrets file not found: {secrets_file}")
+
+    env_password = os.environ.get("VATHBOT_SECRETS_PASSWORD")
+    password = env_password if env_password is not None else getpass("Secrets password: ")
+    plaintext = decrypt_file(secrets_file, password)
+
+    for key, value in parse_env(plaintext).items():
+        os.environ[key] = value
+
+    _validate_required_credentials()
+
+
+def _validate_required_credentials() -> None:
+    for key in REQUIRED_CREDENTIAL_KEYS:
         if not os.environ.get(key):
             raise EnvironmentError(f"Missing required env var: {key}")
+
+
+def ensure_credentials(
+    *,
+    secrets_file: Path | None = None,
+    env_file: Path | None = None,
+    allow_plaintext: bool = False,
+    dry_run: bool = False,
+) -> None:
+    if dry_run:
+        return
+
+    if credentials_present():
+        return
+
+    if secrets_file is not None:
+        load_credentials_from_secrets_file(secrets_file)
+        return
+
+    if env_file is not None and allow_plaintext:
+        load_credentials_from_env_file(env_file)
+        return
+
+    if env_file is not None and not allow_plaintext:
+        raise EnvironmentError(
+            f"Refusing plaintext env file {env_file} without --allow-plaintext"
+        )
+
+    raise EnvironmentError(
+        "Missing Polymarket credentials. Set POLYMARKET_* env vars, "
+        "pass --secrets-file, or use --env-file with --allow-plaintext."
+    )
+
+
+def load_credentials(env_file: Path) -> None:
+    """Deprecated: use ensure_credentials with allow_plaintext=True."""
+    load_credentials_from_env_file(env_file)
 
 
 def get_clob_client() -> ClobClient:
@@ -456,10 +525,21 @@ def build_parser() -> argparse.ArgumentParser:
         description="Place Polymarket CLOB buy/sell orders from a market slug.",
     )
     parser.add_argument(
+        "--secrets-file",
+        type=Path,
+        default=None,
+        help="Password-encrypted credentials file (prompts for password)",
+    )
+    parser.add_argument(
         "--env-file",
         type=Path,
-        default=DEFAULT_ENV_FILE,
-        help=f"Path to .env with POLYMARKET_* credentials (default: {DEFAULT_ENV_FILE})",
+        default=None,
+        help="Plaintext .env file (requires --allow-plaintext)",
+    )
+    parser.add_argument(
+        "--allow-plaintext",
+        action="store_true",
+        help="Allow loading credentials from --env-file (unsafe)",
     )
     parser.add_argument(
         "--log-file",
@@ -521,8 +601,13 @@ def main(argv: list[str] | None = None) -> int:
     mode: OrderMode = "FAK" if args.fak else "FOK"
 
     try:
-        load_credentials(args.env_file)
-    except (FileNotFoundError, EnvironmentError) as exc:
+        ensure_credentials(
+            secrets_file=args.secrets_file,
+            env_file=args.env_file,
+            allow_plaintext=args.allow_plaintext,
+            dry_run=args.dry_run,
+        )
+    except (FileNotFoundError, EnvironmentError, ValueError) as exc:
         log.error("%s", exc)
         return 1
 

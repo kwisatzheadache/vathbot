@@ -2,7 +2,6 @@ import Config
 
 config :vathbot, :data_root, "data"
 config :vathbot, :start_runtime, true
-config :vathbot, :execute_trades, System.get_env("VATHBOT_EXECUTE_TRADES") == "1"
 
 pybuy_dir = Path.expand("../pybuy", __DIR__)
 venv_python = Path.join(pybuy_dir, "venv/bin/python")

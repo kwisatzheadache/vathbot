@@ -10,7 +10,7 @@ defmodule Vathbot.MarketFinalizer do
   def child_spec(opts) do
     %{
       id: @task_supervisor,
-      start: {Task.Supervisor, :start_link, [[name: @task_supervisor, max_children: 3] ++ opts]},
+      start: {Task.Supervisor, :start_link, [[name: @task_supervisor, max_children: 1] ++ opts]},
       type: :supervisor
     }
   end
@@ -53,14 +53,11 @@ defmodule Vathbot.MarketFinalizer do
     t0 = System.monotonic_time(:millisecond)
     jsonl_path = Vathbot.DataWriter.market_jsonl_path(slug, interval)
 
+    ticks_path = Vathbot.DataWriter.ticks_parquet_path(slug, interval)
+
     with {:ok, meta} <- metadata_for_slug(slug, interval),
          :ok <- write_metadata_parquet(slug, interval, meta),
-         {:ok, rows} <- Vathbot.MarketNormalize.ticks_from_jsonl(jsonl_path, meta),
-         {:ok, count} <-
-           Vathbot.ParquetWriter.write_ticks(
-             Vathbot.DataWriter.ticks_parquet_path(slug, interval),
-             rows
-           ),
+         {:ok, count} <- Vathbot.MarketNormalize.write_ticks_parquet_from_jsonl(jsonl_path, ticks_path, meta),
          :ok <- Vathbot.DataWriter.remove_market_jsonl(slug, interval) do
       elapsed = System.monotonic_time(:millisecond) - t0
       Logger.info("MarketFinalizer #{slug}: #{count} ticks → parquet (#{elapsed}ms)")

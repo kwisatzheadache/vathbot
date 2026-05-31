@@ -173,7 +173,7 @@ defmodule Vathbot.TradeExecutor do
   defp parse_float(_), do: nil
 
   defp global_flags(log_file) do
-    ["--fak", "--log-file", log_file, "--env-file", env_file()]
+    ["--fak", "--log-file", log_file]
   end
 
   defp price_args(nil), do: []
@@ -185,10 +185,6 @@ defmodule Vathbot.TradeExecutor do
 
   defp script_path do
     Path.join(pybuy_dir(), "place_order.py")
-  end
-
-  defp env_file do
-    Path.join(pybuy_dir(), ".env")
   end
 
   defp pybuy_dir do
@@ -216,9 +212,31 @@ defmodule Vathbot.TradeExecutor do
     python = python_executable()
     cd = pybuy_dir()
 
-    case System.cmd(python, [script | rest], cd: cd, stderr_to_stdout: true) do
+    case System.cmd(python, [script | rest],
+           cd: cd,
+           stderr_to_stdout: true,
+           env: subprocess_env()
+         ) do
       {output, 0} -> {0, output}
       {output, code} -> {code, output}
+    end
+  end
+
+  defp subprocess_env do
+    base = Map.new(System.get_env())
+
+    case Vathbot.Secrets.credentials() do
+      {:ok, creds} ->
+        creds
+        |> Map.take([
+          "POLYMARKET_PRIVATE_KEY",
+          "POLYMARKET_FUNDER",
+          "POLYMARKET_SIGNATURE_TYPE"
+        ])
+        |> Map.merge(base)
+
+      {:error, :locked} ->
+        base
     end
   end
 end

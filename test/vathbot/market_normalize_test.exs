@@ -17,7 +17,7 @@ defmodule Vathbot.MarketNormalizeTest do
       File.rm_rf!(tmp)
       if prev, do: Application.put_env(:vathbot, :data_root, prev), else: Application.delete_env(:vathbot, :data_root)
     end)
-    {:ok, meta: sample_meta()}
+    {:ok, meta: sample_meta(), tmp: tmp}
   end
 
   test "metadata_from_event", %{} do
@@ -40,6 +40,14 @@ defmodule Vathbot.MarketNormalizeTest do
     assert first.slug == @slug
     assert first.mid == (first.best_bid + first.best_ask) / 2.0
     assert_in_delta first.spread, first.best_ask - first.best_bid, 1.0e-9
+  end
+
+  test "write_ticks_parquet_from_jsonl streams to sorted parquet", %{meta: meta, tmp: tmp} do
+    out = "5m/#{@slug}/ticks_stream.parquet"
+    assert {:ok, 4} = MarketNormalize.write_ticks_parquet_from_jsonl(@jsonl_rel, out, meta, batch_size: 2)
+
+    df = Explorer.DataFrame.from_parquet!(Path.join(tmp, out))
+    assert Explorer.DataFrame.n_rows(df) == 4
   end
 
   defp sample_meta do
